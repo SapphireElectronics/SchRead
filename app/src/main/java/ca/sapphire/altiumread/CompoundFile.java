@@ -6,6 +6,8 @@ import java.io.BufferedInputStream;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Arrays;
 
@@ -28,6 +30,20 @@ public class CompoundFile {
             e.printStackTrace();
             return;
         }
+
+        ObjectInputStream ois;
+
+        try {
+            ois = new ObjectInputStream( in );
+            Header header = (Header) ois.readObject();
+        } catch (IOException e) {
+            e.printStackTrace();
+        } catch (ClassNotFoundException e1) {
+            e1.printStackTrace();
+        }
+
+        int zz=0;
+
 
         // header is always 512 bytes
         readNextSector( header, 512 );
@@ -70,13 +86,13 @@ public class CompoundFile {
         Log.i( TAG, "Short sector: " + shortSectorID );
         Log.i( TAG, "Master sector: " + masterSectorID );
 
-        int a = 2^3;
+ //       int a = 2^3;
 
-        byte[] buffer = new byte[sectorSize];
-        for (int i = 0; i < numberOfSectors; i++) {
-            readNextSector( );
-
-        }
+//        byte[] buffer = new byte[sectorSize];
+//        for (int i = 0; i < numberOfSectors; i++) {
+//            readNextSector( );
+//
+//        }
 
 
     }
@@ -127,5 +143,25 @@ public class CompoundFile {
             return (buffer[index]) | (buffer[index+1] << 8) | (buffer[index+2] << 16) | (buffer[index+3] << 8);
         else
             return (buffer[index+3]) | (buffer[index+2] << 8) | (buffer[index+1] << 16) | (buffer[index] << 8);
+    }
+
+    public class Header implements Serializable {
+        byte abSig[] = new byte[8];
+        byte clsid[] = new byte[16];
+        short uMinorVersion;
+        short uDllVersion;
+        short byteOrder;
+        short sectorShift;
+        short miniSectorShift;
+        short reserved;
+        int reserved1;
+        int sectDir;
+        int sectFat;
+        int signature;
+        int miniSectorCutoff;
+        int sectMiniFat;
+        int sectDifStart;
+        int sectDif;
+        int fat[] = new int[109];
     }
 }
