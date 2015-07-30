@@ -7,6 +7,7 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.ObjectInputStream;
+import java.io.RandomAccessFile;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -15,7 +16,8 @@ import java.util.Arrays;
  * Created by Admin on 25/07/15.
  */
 public class CompoundFile {
-    BufferedInputStream in;
+//    BufferedInputStream in;
+    RandomAccessFile raf;
     boolean littleEndian = true;
 
     public final static String TAG = "CompoundFile";
@@ -44,7 +46,8 @@ public class CompoundFile {
 
     public CompoundFile( String fileName ) {
         try {
-            in = new BufferedInputStream( new FileInputStream( fileName ));
+            raf = new RandomAccessFile( fileName, "r" );
+//            in = new BufferedInputStream( new FileInputStream( fileName ));
         } catch (FileNotFoundException e) {
             e.printStackTrace();
             return;
@@ -93,18 +96,20 @@ public class CompoundFile {
             sectorStart = 512 + sectorToRead * sectorBytes;
 
             try {
-                in.skip( sectorStart - currentByte );
+//                in.skip( sectorStart - currentByte );
+                raf.seek( sectorStart );
             } catch (IOException e) {
                 e.printStackTrace();
             }
 
-            currentByte = sectorStart;
+
+//            currentByte = sectorStart;
             byte[] newSector = new byte[sectorBytes];
             readNextSector( newSector, sectorBytes );
-            currentByte += sectorBytes;
+//            currentByte += sectorBytes;
 
 /**
- * Seems to be a slighty bug in the Altium file writer.  SAT sectors are supposed to start with -3
+ * Seems to be a slight bug in the Altium file writer.  SAT sectors are supposed to start with -3
  * as a flag to indicate it's a SAT chain sector, but in at least one (valid) Altium file, the
  * -3 is actually on the last sector id of the previous SAT sector, and the next SAT sector starts
  * with the next location, not -3.  Therefore, ignore the first value in the SAT sector as needing
@@ -114,11 +119,11 @@ public class CompoundFile {
                 satSectors.add( newSector );
         }
 
-        try {
-            in.close();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+//        try {
+//            in.close();
+//        } catch (IOException e) {
+//            e.printStackTrace();
+//        }
 
 
         Log.i(TAG, "Read in " + header.numberOfSectors + " sectors.");
@@ -149,28 +154,29 @@ public class CompoundFile {
         }
 
 
-        try {
-            in = new BufferedInputStream( new FileInputStream( fileName ));
-        } catch (FileNotFoundException e) {
-            e.printStackTrace();
-            return;
-        }
+//        try {
+//            in = new BufferedInputStream( new FileInputStream( fileName ));
+//        } catch (FileNotFoundException e) {
+//            e.printStackTrace();
+//            return;
+//        }
 
-        currentByte = 0;
+//        currentByte = 0;
 
         for (int i = 0; i < dirID.size(); i++) {
             sectorToRead = dirID.get( i) ;
             sectorStart = 512 + sectorToRead * sectorBytes;
 
             try {
-                in.skip(sectorStart - currentByte);
+//                in.skip(sectorStart - currentByte);
+                raf.seek( sectorStart );
             } catch (IOException e) {
                 e.printStackTrace();
             }
 
             byte[] newSector = new byte[sectorBytes];
             readNextSector(newSector, sectorBytes);
-            currentByte += sectorBytes;
+//            currentByte += sectorBytes;
 
             dirSectors.add(newSector);
         }
@@ -204,8 +210,11 @@ public class CompoundFile {
         int zzz = 1;
 
 
-
-
+        try {
+            raf.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
     public void traverse( int id ) {
@@ -244,7 +253,8 @@ public class CompoundFile {
 
     public void readNextSector( byte[] buffer, int bytes ) {
         try {
-            in.read( buffer, 0, bytes );
+            raf.readFully( buffer, 0, bytes );
+//            in.read( buffer, 0, bytes );
         } catch (IOException e) {
             e.printStackTrace();
             Log.i(TAG, "readNextSector: unable to read in a full sector.");
@@ -255,9 +265,11 @@ public class CompoundFile {
     public short getShort() {
         try {
             if( littleEndian )
-                return (short)( (in.read()&0xff) | (in.read()&0xff << 8) );
+//                return (short)( (in.read()&0xff) | (in.read()&0xff << 8) );
+                return (short)( (raf.read()&0xff) | (raf.read()&0xff << 8) );
             else
-                return (short) ( (in.read()&0xff << 8) | (in.read()&0xff) );
+//                return (short) ( (in.read()&0xff << 8) | (in.read()&0xff) );
+                return (short) ( (raf.read()&0xff << 8) | (raf.read()&0xff) );
         } catch (IOException e) {
             e.printStackTrace();
             return 0;
@@ -274,9 +286,11 @@ public class CompoundFile {
     public int getInt() {
         try {
             if( littleEndian )
-                return (in.read()&0xff) | (in.read()&0xff << 8) | (in.read()&0xff << 16) | (in.read()&0xff << 24);
+//                return (in.read()&0xff) | (in.read()&0xff << 8) | (in.read()&0xff << 16) | (in.read()&0xff << 24);
+                return (raf.read()&0xff) | (raf.read()&0xff << 8) | (raf.read()&0xff << 16) | (raf.read()&0xff << 24);
             else
-                return (in.read()&0xff << 24) | (in.read()&0xff << 16) | (in.read()&0xff << 8) | (in.read()&0xff);
+//                return (in.read()&0xff << 24) | (in.read()&0xff << 16) | (in.read()&0xff << 8) | (in.read()&0xff);
+                return (raf.read()&0xff << 24) | (raf.read()&0xff << 16) | (raf.read()&0xff << 8) | (raf.read()&0xff);
         } catch (IOException e) {
             e.printStackTrace();
             return 0;
