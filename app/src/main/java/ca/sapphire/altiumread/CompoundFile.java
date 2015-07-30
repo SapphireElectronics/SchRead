@@ -23,8 +23,24 @@ public class CompoundFile {
     Header header;
 
     int[] sat;
-    ArrayList<byte[]> sector = new ArrayList<byte[]>();
-    ArrayList<byte[]> shortSector = new ArrayList<byte[]>();
+
+    ArrayList<byte[]> satSectors = new ArrayList<byte[]>();     // sector into for SAT
+    ArrayList<byte[]> dirSectors = new ArrayList<byte[]>();     // sector info for Directory
+    ArrayList<byte[]> shortSector = new ArrayList<byte[]>();    // sector info for Short SAT
+
+    // list of sectors in Directory stream
+    ArrayList<Integer> dirID = new ArrayList<Integer>();
+
+    // list of sectors in HeaderFile stream
+    ArrayList<Integer> fileID = new ArrayList<Integer>();
+
+    // list of directories compiled when traversing the directory tree
+    ArrayList<Integer> dirTraverse = new ArrayList<Integer>();
+
+    int mainDataSecID;
+    int mainDataSize = 0;
+
+    int sectorBytes;
 
     public CompoundFile( String fileName ) {
         try {
@@ -64,22 +80,56 @@ public class CompoundFile {
 
 
         // Read sectors
-        int sectorBytes = 1 << header.sectorSize;
+        sectorBytes = 1 << header.sectorSize;
+
+        // currently at end of header, which is start of Sector 0
+        // byte count for the start of a sector is 512 (for header) + sector*sectorSize
+        int currentByte = 512;
+        int sectorToRead;
+        int sectorStart;
 
         for (int i = 0; i < header.numberOfSectors; i++) {
+            sectorToRead = header.msat[i];
+            sectorStart = 512 + sectorToRead * sectorBytes;
+
+            try {
+                in.skip( sectorStart - currentByte );
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+
+            currentByte = sectorStart;
             byte[] newSector = new byte[sectorBytes];
             readNextSector( newSector, sectorBytes );
-            sector.add( newSector );
+            currentByte += sectorBytes;
+
+/**
+ * Seems to be a slighty bug in the Altium file writer.  SAT sectors are supposed to start with -3
+ * as a flag to indicate it's a SAT chain sector, but in at least one (valid) Altium file, the
+ * -3 is actually on the last sector id of the previous SAT sector, and the next SAT sector starts
+ * with the next location, not -3.  Therefore, ignore the first value in the SAT sector as needing
+ * to be -3 and just add the sectors to the SAT sector list
+ */
+//            if( getInt( newSector, 0 ) == -3)
+                satSectors.add( newSector );
         }
+
+        try {
+            in.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+
         Log.i(TAG, "Read in " + header.numberOfSectors + " sectors.");
 
         // Read SAT
         // only one sector to read, generally Sector 0
-        sat = new int[sectorBytes/4*header.numberOfSectors];
+        sat = new int[sectorBytes/4*satSectors.size()];
 //        byte[] satBuffer = sector.get(0);
 
-        for (int j = 0; j < header.numberOfSectors; j++) {
-            byte[] satBuffer = sector.get(j);
+        for (int j = 0; j < satSectors.size(); j++) {
+            byte[] satBuffer = satSectors.get(j);
             for (int i = 0; i < sectorBytes / 4; i++) {
                 sat[i+j*sectorBytes/4] = getInt(satBuffer, i * 4);
             }
@@ -90,19 +140,105 @@ public class CompoundFile {
 
 
         // Read Directory
-        // Follow the Directory chain in the SAT until we get the value -2
+        // Walk the Directory chain in the SAT until we get the value -2
+        int directorySector = header.directorySectorID;
 
-        Directory dir = new Directory();
-        int currentSector = header.directorySectorID;
-
-        while( currentSector != -2 ) {
-            dir.read( sector.get( currentSector), 0 );
-            // do the actual sector read here.
-            currentSector = sat[currentSector];
+        while( directorySector != -2 ) {
+            dirID.add(header.directorySectorID);
+            directorySector = sat[directorySector];
         }
 
 
-        Log.i(TAG, "Read first Dir sector.");
+        try {
+            in = new BufferedInputStream( new FileInputStream( fileName ));
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+            return;
+        }
+
+        currentByte = 0;
+
+        for (int i = 0; i < dirID.size(); i++) {
+            sectorToRead = dirID.get( i) ;
+            sectorStart = 512 + sectorToRead * sectorBytes;
+
+            try {
+                in.skip(sectorStart - currentByte);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+
+            byte[] newSector = new byte[sectorBytes];
+            readNextSector(newSector, sectorBytes);
+            currentByte += sectorBytes;
+
+            dirSectors.add(newSector);
+        }
+
+        traverse( 0 );
+
+        // at this point, we should have mainDataSecID and mainDataSize set
+
+        if( mainDataSize < 0 ) {
+            Log.i(TAG, "Main data not found");
+            return;
+        }
+
+        // Walk the main data chain in the SAT until we get the value -2
+        int fileSecID = mainDataSecID;
+
+        try {
+            while( fileSecID != -2 ) {
+                if( fileSecID < 0 )
+                    ;
+                if( fileID.size() > 700 )
+                    ;
+                fileID.add( fileSecID );
+                fileSecID = sat[ fileSecID ];
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+
+        int zzz = 1;
+
+
+
+
+    }
+
+    public void traverse( int id ) {
+        dirTraverse.add( id );
+
+        Directory dir = new Directory();
+
+        int dirsPerSector = sectorBytes/128;
+
+        int secID = id/dirsPerSector;            // four IDs per sector
+        int offset = (id % dirsPerSector) * 128;
+
+        dir.read( dirSectors.get( secID ), offset );
+
+        Log.i(TAG, "Dir " + dir.name);
+
+        if(  dir.name.equals( "FileHeader")) {
+            Log.i( TAG, "Found FileHeader.");
+            mainDataSecID = dir.sectorID;
+            mainDataSize = dir.streamSize;
+        }
+
+        if( dir.rootDirID != -1 ) {
+            traverse(dir.rootDirID);
+        }
+
+        if( dir.leftDirID != -1 ) {
+            traverse(dir.leftDirID);
+        }
+
+        if( dir.rightDirID != -1 ) {
+            traverse(dir.rightDirID);
+        }
 
     }
 
@@ -119,9 +255,9 @@ public class CompoundFile {
     public short getShort() {
         try {
             if( littleEndian )
-                return (short)( (in.read()) | (in.read() << 8) );
+                return (short)( (in.read()&0xff) | (in.read()&0xff << 8) );
             else
-                return (short) ( (in.read() << 8) | (in.read()) );
+                return (short) ( (in.read()&0xff << 8) | (in.read()&0xff) );
         } catch (IOException e) {
             e.printStackTrace();
             return 0;
@@ -130,17 +266,17 @@ public class CompoundFile {
 
     public short getShort( byte[] buffer, int index ) {
         if( littleEndian )
-            return (short)( (buffer[index]) | (buffer[index+1] << 8) );
+            return (short)( (buffer[index]&0xff) | (buffer[index+1]&0xff << 8) );
         else
-            return (short)( (buffer[index+1]) | (buffer[index] << 8) );
+            return (short)( (buffer[index+1]&0xff) | (buffer[index]&0xff << 8) );
     }
 
     public int getInt() {
         try {
             if( littleEndian )
-                return (in.read()) | (in.read() << 8) | (in.read() << 16) | (in.read() << 8);
+                return (in.read()&0xff) | (in.read()&0xff << 8) | (in.read()&0xff << 16) | (in.read()&0xff << 24);
             else
-                return (in.read() << 24) | (in.read() << 16) | (in.read() << 8) | (in.read());
+                return (in.read()&0xff << 24) | (in.read()&0xff << 16) | (in.read()&0xff << 8) | (in.read()&0xff);
         } catch (IOException e) {
             e.printStackTrace();
             return 0;
@@ -149,15 +285,21 @@ public class CompoundFile {
 
     public int getInt( byte[] buffer, int index ) {
         if( littleEndian )
-            return (buffer[index]) | (buffer[index+1] << 8) | (buffer[index+2] << 16) | (buffer[index+3] << 8);
+            return ( ((int)(buffer[index  ]&0xff)      ) |
+                     ((int)(buffer[index+1]&0xff) << 8 ) |
+                     ((int)(buffer[index+2]&0xff) << 16) |
+                     ((int)(buffer[index+3]&0xff) << 24)   );
         else
-            return (buffer[index+3]) | (buffer[index+2] << 8) | (buffer[index+1] << 16) | (buffer[index] << 8);
+            return ( ((int)(buffer[index+3]&0xff)      ) |
+                     ((int)(buffer[index+2]&0xff) << 8 ) |
+                     ((int)(buffer[index+1]&0xff) << 16) |
+                     ((int)(buffer[index  ]&0xff) << 24)   );
     }
 
     public void getChars( byte[] buffer, int index, char[] charBuffer, int length )
     {
         for (int i = 0; i < length; i++) {
-            charBuffer[i] = (char) (buffer[i*2] + ( buffer[i*2+1] << 8) );
+            charBuffer[i] = (char) (buffer[index+i*2] + ( buffer[index+i*2+1] << 8) );
         }
     }
 
@@ -210,36 +352,47 @@ public class CompoundFile {
     }
 
     public class Directory {
-        public char[] name = new char[32];
+        public char[] nameChar = new char[32];
         public short nameSize;
         public byte type;
-        public byte colour;
+//        public byte colour;
         public int leftDirID;
         public int rightDirID;
         public int rootDirID;
-        public byte[] uniqueID = new byte[16];
-        public int flags;
-        public byte[] timeStampCreation = new byte[8];
-        public byte[] timeStampModification = new byte[8];
+//        public byte[] uniqueID = new byte[16];
+//        public int flags;
+//        public byte[] timeStampCreation = new byte[8];
+//        public byte[] timeStampModification = new byte[8];
         public int sectorID;
         public int streamSize;
-        public int unused;
+
+        public String name;
+
+        public void read( int directoryIndex ) {
+            int dirsPerSector = sectorBytes / 128;
+            int secID = dirID.get(directoryIndex / dirsPerSector);     // four IDs per sector
+            int offset = (directoryIndex % dirsPerSector) * 128;
+
+            byte[] buffer = dirSectors.get(secID);
+
+            read( buffer, offset );
+        }
 
         public void read( byte[] buffer, int index) {
-            getChars( buffer, index, name, 32 );
+            getChars( buffer, index, nameChar, 32 );
             nameSize = getShort( buffer, index + 64 );
+            name = new String( nameChar, 0, nameSize/2-1 );
             type = buffer[index+66];
-            colour = buffer[index+67];
+//            colour = buffer[index+67];
             leftDirID = getInt( buffer, index+68 );
             rightDirID = getInt( buffer, index+72 );
             rootDirID = getInt( buffer, index+76 );
-            System.arraycopy( buffer, index+80, uniqueID, 0, 16 );
-            flags = getInt( buffer, index+96 );
-            System.arraycopy( buffer, index+100, timeStampCreation, 0, 8 );
-            System.arraycopy( buffer, index+108, timeStampModification, 0, 8 );
+//            System.arraycopy( buffer, index+80, uniqueID, 0, 16 );
+//            flags = getInt( buffer, index+96 );
+//            System.arraycopy( buffer, index+100, timeStampCreation, 0, 8 );
+//            System.arraycopy( buffer, index+108, timeStampModification, 0, 8 );
             sectorID = getInt( buffer, index+116 );
             streamSize = getInt( buffer, index+120 );
-            unused = getInt( buffer, index+124 );
             // total of 128 bytes
         }
     }

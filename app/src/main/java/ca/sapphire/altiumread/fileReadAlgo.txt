@@ -1,6 +1,6 @@
 Algorithm for reading Compound Document
 
-Header
+HEADER
 - Read header into Header class (512 bytes)
     - relevant info:
         - make sure it's a compound document by checking file identifier.
@@ -17,13 +17,17 @@ Header
 
 MSAT
 - MSAT starts in header and continues to ID of first MSAT if there is one
+- MSAT chain is followed by first reading the 109 IDs in the header, then following
+    the first Master Sector as identified in the Header (until -2 is encountered)
+- total number of MSAT sectors is identified in the Header
 - currently do not support any MSAT other than in the Header
 
 SAT
-- read all sectors specified in the MSAT
-- currently MSAT is only contained in header, therefore 109 max
-- read a sector if the MSAT value is not equal -1
-    - this is the same as the number of sectors value read in the header ...
+- SAT starts in sectors as identified in the Header MSAT[0], MSAT[1] ...
+- total number of SAT sectors is identified in the header.
+- SecIDs are stored as ints (4 bytes) so 512/4 = 128 IDs per sector
+- therefore size the SecID array as: totalSectors * (sectorSize/integerSize)
+- need to read in SAT table by going through MSAT entries, then close and reopen file to rewind it.
 
 SSAT
 - read all sectors specified in the MSAT
@@ -31,7 +35,7 @@ SSAT
 
 DIR
 - lookup Sector for root directory entry from Header
-- build directory sector chain starting at
+- build directory sector chain starting at this entry
 - read root directory
 -
 
