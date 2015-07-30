@@ -3,8 +3,10 @@ package ca.sapphire.altiumread;
 import android.util.Log;
 
 import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.RandomAccessFile;
@@ -16,7 +18,6 @@ import java.util.Arrays;
  * Created by Admin on 25/07/15.
  */
 public class CompoundFile {
-//    BufferedInputStream in;
     RandomAccessFile raf;
     boolean littleEndian = true;
 
@@ -47,7 +48,6 @@ public class CompoundFile {
     public CompoundFile( String fileName ) {
         try {
             raf = new RandomAccessFile( fileName, "r" );
-//            in = new BufferedInputStream( new FileInputStream( fileName ));
         } catch (FileNotFoundException e) {
             e.printStackTrace();
             return;
@@ -87,26 +87,16 @@ public class CompoundFile {
 
         // currently at end of header, which is start of Sector 0
         // byte count for the start of a sector is 512 (for header) + sector*sectorSize
-        int currentByte = 512;
-        int sectorToRead;
-        int sectorStart;
 
         for (int i = 0; i < header.numberOfSectors; i++) {
-            sectorToRead = header.msat[i];
-            sectorStart = 512 + sectorToRead * sectorBytes;
-
             try {
-//                in.skip( sectorStart - currentByte );
-                raf.seek( sectorStart );
+                raf.seek( 512 + header.msat[i] * sectorBytes );
             } catch (IOException e) {
                 e.printStackTrace();
             }
 
-
-//            currentByte = sectorStart;
             byte[] newSector = new byte[sectorBytes];
             readNextSector( newSector, sectorBytes );
-//            currentByte += sectorBytes;
 
 /**
  * Seems to be a slight bug in the Altium file writer.  SAT sectors are supposed to start with -3
@@ -119,19 +109,12 @@ public class CompoundFile {
                 satSectors.add( newSector );
         }
 
-//        try {
-//            in.close();
-//        } catch (IOException e) {
-//            e.printStackTrace();
-//        }
-
 
         Log.i(TAG, "Read in " + header.numberOfSectors + " sectors.");
 
         // Read SAT
         // only one sector to read, generally Sector 0
         sat = new int[sectorBytes/4*satSectors.size()];
-//        byte[] satBuffer = sector.get(0);
 
         for (int j = 0; j < satSectors.size(); j++) {
             byte[] satBuffer = satSectors.get(j);
@@ -153,30 +136,15 @@ public class CompoundFile {
             directorySector = sat[directorySector];
         }
 
-
-//        try {
-//            in = new BufferedInputStream( new FileInputStream( fileName ));
-//        } catch (FileNotFoundException e) {
-//            e.printStackTrace();
-//            return;
-//        }
-
-//        currentByte = 0;
-
         for (int i = 0; i < dirID.size(); i++) {
-            sectorToRead = dirID.get( i) ;
-            sectorStart = 512 + sectorToRead * sectorBytes;
-
             try {
-//                in.skip(sectorStart - currentByte);
-                raf.seek( sectorStart );
+                raf.seek( 512 + dirID.get(i) * sectorBytes );
             } catch (IOException e) {
                 e.printStackTrace();
             }
 
             byte[] newSector = new byte[sectorBytes];
             readNextSector(newSector, sectorBytes);
-//            currentByte += sectorBytes;
 
             dirSectors.add(newSector);
         }
@@ -195,10 +163,6 @@ public class CompoundFile {
 
         try {
             while( fileSecID != -2 ) {
-                if( fileSecID < 0 )
-                    ;
-                if( fileID.size() > 700 )
-                    ;
                 fileID.add( fileSecID );
                 fileSecID = sat[ fileSecID ];
             }
@@ -206,11 +170,33 @@ public class CompoundFile {
             e.printStackTrace();
         }
 
+        BufferedOutputStream bos = null;
+
+        try {
+            bos = new BufferedOutputStream(new FileOutputStream(fileName + ".str"));
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+        }
+
+        byte[] bf = new byte[sectorBytes];
+
+        try {
+            for( int sector : fileID ) {
+                raf.seek( 512 + sector * sectorBytes );
+                raf.readFully(bf, 0, sectorBytes);
+                bos.write( bf );
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+
 
         int zzz = 1;
 
 
         try {
+            bos.close();
             raf.close();
         } catch (IOException e) {
             e.printStackTrace();
